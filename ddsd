@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# pv wrapper to safely flash images to an SD card
+#
+# Copyleft 2017 by Ignacio Nunez Hernanz <nacho _a_t_ ownyourbits _d_o_t_ com>
+# GPL licensed (see end of file) * Use at your own risk!
+#
+# Usage:
+#   ddsd (-b <block size>) <img_file> <block_device>
+#
+# More details at ownyourbits.com
+
+print_usage() { echo "Usage: $0 (-b/--block-size <block size>) <img_file> <block_device>"; }
+
+ddsd()
+{
+  # parse arguments
+  local OPTS
+  OPTS=$( getopt -o hb: -l block-size: -l help -- "$@" 2>/dev/null )
+  [[ $? -ne 0 ]] && { echo "error parsing arguments"; return 1; }
+  eval set -- "$OPTS"
+
+  while true; do
+    case "$1" in
+      -h|--help      ) print_usage; return 0 ;;
+      -b|--block-size) local BS=$2; shift 2  ;;
+      --)                    shift; break    ;;
+    esac
+  done
+
+  # block size argument
+  [[ "$BS" != "" ]] && local ARG="-B $BS"
+
+  local IF="$1"
+  local OF="$2"
+
+  # checks
+  type pv &>/dev/null || { echo "install pv first"    ; return 1; }
+  [[ $# -ne 2 ]] && { print_usage                     ; return 1; }
+  [[ -f "$IF" ]] || { echo "$IF does not exist"       ; return 1; }
+  [[ -e "$OF" ]] || { echo "$OF does not exist"       ; return 1; }
+  [[ -b "$OF" ]] || { echo "$OF is not a block device"; return 1; }
+  awk '{ print $1 }' /proc/mounts | grep -q "$OF" && { echo "$OF is currently mounted"; return 1; }
+
+  # CTRL-C trap
+  cancel() { echo "cancelling..."; kill $PID; wait $PID; exit 1; }
+  trap cancel SIGINT
+
+  # flashing
+  echo "flashing..."
+  pv $ARG "$IF" > "$OF" &
+  PID=$!
+  wait $PID || return 1
+
+  # syncing
+  echo -n "syncing... " && sync && echo "done"
+}
+
+ddsd $@
+
+# License
+#
+# This script is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This script is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this script; if not, write to the
+# Free Software Foundation, Inc., 59 Temple Place, Suite 330,
+# Boston, MA  02111-1307  USA
